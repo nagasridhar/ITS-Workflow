@@ -1,7 +1,6 @@
 # ITS-Workflow
 
-This Github repository maintains the ITS workflow steps for DADA2
+This Github repository maintains the tutorial walks through of version 1.8 of the DADA2 pipeline on a small multi-sample ITS amplicon dataset. 
 
-This line has been written to test the commits are able to be merged
+The dataset used here is a Mock ITS community constructed by selecting a 23 known fungal cultures from the Center for Forest Mycology Research (CFMR) culture collection and sequenced on an Illumina MiSeq using a 2 X 300 bp sequencing kit. 
 
-It does not seem to be working though. We will see how this works.
