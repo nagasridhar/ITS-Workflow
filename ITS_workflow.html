@@ -190,10 +190,12 @@ NA [4] &quot;GCATATCAATAAGCGGAGGA&quot;</code></pre>
 <p>To follow along, download the example data and unzip. These are paired-end fastq files which are to be processed. Define the following path variable so that it points to the extracted directory on <strong>your</strong> machine:</p>
 <pre class="r"><code>path &lt;- &quot;~/Desktop/ITS_mock_community&quot;  ## CHANGE ME to the directory containing the fastq files.
 list.files(path)</code></pre>
-<pre><code>## [1] &quot;m4C-mock3-16000_CGCTCATT-TATAGCCT_L001_R1_001.fastq.gz&quot;
-## [2] &quot;m4C-mock3-16000_CGCTCATT-TATAGCCT_L001_R2_001.fastq.gz&quot;
-## [3] &quot;m4C-mock3-32000_CGCTCATT-ATAGAGGC_L001_R1_001.fastq.gz&quot;
-## [4] &quot;m4C-mock3-32000_CGCTCATT-ATAGAGGC_L001_R2_001.fastq.gz&quot;</code></pre>
+<pre><code>## [1] &quot;cutadapt_trimmed&quot;                                      
+## [2] &quot;filtN&quot;                                                 
+## [3] &quot;m4C-mock3-16000_CGCTCATT-TATAGCCT_L001_R1_001.fastq.gz&quot;
+## [4] &quot;m4C-mock3-16000_CGCTCATT-TATAGCCT_L001_R2_001.fastq.gz&quot;
+## [5] &quot;m4C-mock3-32000_CGCTCATT-ATAGAGGC_L001_R1_001.fastq.gz&quot;
+## [6] &quot;m4C-mock3-32000_CGCTCATT-ATAGAGGC_L001_R2_001.fastq.gz&quot;</code></pre>
 <p>If the <code>list.files</code> listed all the files you expect, identify the FASTQ files pattern for <strong>your</strong> sequence files. Here, the sequence files have the “R1_001.fastq.gz” and “R2_001.fastq.gz” format, we use these file patterns to read in the sequence files and perform some string manipulation to get matched lists of the forward and reverse fastq files.</p>
 <p>For the filterAndTrim step, we need to create an output location for the N trimmed sequence files. We use the names of the initial sequences and create a new file location followed by running the filterAndTrim step.</p>
 <pre class="r"><code>Mock.fnFs &lt;- sort(list.files(path, pattern = &quot;R1_001.fastq.gz&quot;, full.names = TRUE))
@@ -207,25 +209,25 @@ filterAndTrim(Mock.fnFs, Mock.fnFs.filtN, Mock.fnRs, Mock.fnRs.filtN, maxN = 0,
     multithread = TRUE)</code></pre>
 <p>After the removal of Ns from the raw reads, we can now count the primers present in the sequence files using the vcnt_funcn. Identifying and counting the primers on one set of paired end FASTQ files is sufficient as it helps identify the primers on the remaining sequence files assuming all the files were created using the same library preparation.</p>
 <p>Here we read in the Ns removed FASTQ file using the <code>readFastq</code> function from the ShortRead package and then store it as a character vector.</p>
-<pre class="r"><code>Mock.R1.filtN &lt;- as.character(sread(readFastq(Mock.fnFs[1])))
-Mock.R2.filtN &lt;- as.character(sread(readFastq(Mock.fnRs[1])))</code></pre>
+<pre class="r"><code>Mock.R1.filtN &lt;- as.character(sread(readFastq(Mock.fnFs.filtN[1])))
+Mock.R2.filtN &lt;- as.character(sread(readFastq(Mock.fnRs.filtN[1])))</code></pre>
 <p>The outputs from applying the <code>vnct_funcn</code> show the presence of the primers on the FASTQ files.</p>
 <pre class="r"><code># Checking and counting the presence of the primer set in the forward read
 sapply(primer.form, vcnt_funcn, filt_seq = Mock.R1.filtN)
 # Checking and counting the presence of the primer set in the reverse read
 sapply(primer.form, vcnt_funcn, filt_seq = Mock.R2.filtN)</code></pre>
 <pre><code>##  GTGARTCATCGAATCTTTG  CACTYAGTAGCTTAGAAAC  GTTTCTAAGCTACTRAGTG 
-##               292892                    0                    0 
+##               292070                    0                    0 
 ##  CAAAGATTCGATGAYTCAC TCCTCCGCTTATTGATATGC AGGAGGCGAATAACTATACG 
 ##                    0                    1                    0 
 ## CGTATAGTTATTCGCCTCCT GCATATCAATAAGCGGAGGA 
-##                    0                43683 
+##                    0                34515 
 ##  GTGARTCATCGAATCTTTG  CACTYAGTAGCTTAGAAAC  GTTTCTAAGCTACTRAGTG 
-##                 1120                 1163                 1116 
+##                    1                    0                    0 
 ##  CAAAGATTCGATGAYTCAC TCCTCCGCTTATTGATATGC AGGAGGCGAATAACTATACG 
-##                 6184               292350                 1055 
+##                 1293               291179                    0 
 ## CGTATAGTTATTCGCCTCCT GCATATCAATAAGCGGAGGA 
-##                 1154                 1056</code></pre>
+##                    0                    0</code></pre>
 <p>The forward orientation of the ITS1f and the reverse complement orientation of the ITS4 primer are present on the forward FASTQ file, the forward orientation of the ITS4 and the reverse complement orientation of the ITS1f primer are present on the reverse FASTQ file.</p>
 <p>These primers can be now removed using a primer/adapter removal tool. Here, we use cutadapt for this process which can be obtained at: <a href="http://cutadapt.readthedocs.io/en/stable/index.html">cutadapt</a>.</p>
 <p>We create an output file name and location for the cutadapt output files using the names of the sequence files.</p>

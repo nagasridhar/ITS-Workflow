@@ -113,8 +113,8 @@ After the removal of Ns from the raw reads, we can now count the primers present
 Here we read in the Ns removed FASTQ file using the `readFastq` function from the ShortRead package and then store it as a character vector. 
 
 ```{r Sequence read in, warning=FALSE, message=FALSE, tidy=TRUE}
-Mock.R1.filtN <- as.character(sread(readFastq(Mock.fnFs[1])))
-Mock.R2.filtN <- as.character(sread(readFastq(Mock.fnRs[1])))
+Mock.R1.filtN <- as.character(sread(readFastq(Mock.fnFs.filtN[1])))
+Mock.R2.filtN <- as.character(sread(readFastq(Mock.fnRs.filtN[1])))
 ```
 
 The outputs from applying the `vnct_funcn` show the presence of the primers on the FASTQ files. 
