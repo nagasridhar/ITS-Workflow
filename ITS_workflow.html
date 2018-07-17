@@ -190,12 +190,10 @@ NA [4] &quot;GCATATCAATAAGCGGAGGA&quot;</code></pre>
 <p>To follow along, download the example data and unzip. These are paired-end fastq files which are to be processed. Define the following path variable so that it points to the extracted directory on <strong>your</strong> machine:</p>
 <pre class="r"><code>path &lt;- &quot;~/Desktop/ITS_mock_community&quot;  ## CHANGE ME to the directory containing the fastq files.
 list.files(path)</code></pre>
-<pre><code>## [1] &quot;cutadapt_trimmed&quot;                                      
-## [2] &quot;filtN&quot;                                                 
-## [3] &quot;m4C-mock3-16000_CGCTCATT-TATAGCCT_L001_R1_001.fastq.gz&quot;
-## [4] &quot;m4C-mock3-16000_CGCTCATT-TATAGCCT_L001_R2_001.fastq.gz&quot;
-## [5] &quot;m4C-mock3-32000_CGCTCATT-ATAGAGGC_L001_R1_001.fastq.gz&quot;
-## [6] &quot;m4C-mock3-32000_CGCTCATT-ATAGAGGC_L001_R2_001.fastq.gz&quot;</code></pre>
+<pre><code>## [1] &quot;m4C-mock3-16000_CGCTCATT-TATAGCCT_L001_R1_001.fastq.gz&quot;
+## [2] &quot;m4C-mock3-16000_CGCTCATT-TATAGCCT_L001_R2_001.fastq.gz&quot;
+## [3] &quot;m4C-mock3-32000_CGCTCATT-ATAGAGGC_L001_R1_001.fastq.gz&quot;
+## [4] &quot;m4C-mock3-32000_CGCTCATT-ATAGAGGC_L001_R2_001.fastq.gz&quot;</code></pre>
 <p>If the <code>list.files</code> listed all the files you expect, identify the FASTQ files pattern for <strong>your</strong> sequence files. Here, the sequence files have the “R1_001.fastq.gz” and “R2_001.fastq.gz” format, we use these file patterns to read in the sequence files and perform some string manipulation to get matched lists of the forward and reverse fastq files.</p>
 <p>For the filterAndTrim step, we need to create an output location for the N trimmed sequence files. We use the names of the initial sequences and create a new file location followed by running the filterAndTrim step.</p>
 <pre class="r"><code>Mock.fnFs &lt;- sort(list.files(path, pattern = &quot;R1_001.fastq.gz&quot;, full.names = TRUE))
