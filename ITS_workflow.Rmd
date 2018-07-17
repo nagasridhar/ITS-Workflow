@@ -4,9 +4,8 @@ output: html_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE, fig.align="center")
+knitr::opts_chunk$set(echo = TRUE)
 ```
-
 
 This tutorial walks through version 1.8 of the DADA2 pipeline on a small multi-sample ITS amplicon dataset. The starting point is a set of Illumina-sequenced paired-end fastq files that have been split ("demultiplexed") by sample and from which the barcodes have already been removed. The end product is an amplicon sequence variant (ASV) table, a higher-resolution analogue of the traditional OTU table, providing records of the number of times each exact [amplicon sequence variant](https://www.nature.com/articles/ismej2017119) was observed in each sample. We also assign taxanomy to the output sequences. 
 
@@ -20,15 +19,10 @@ A key characteristic of the ITS region is being highly variable in length rangin
 
 
 
-![Schematic 1: Short overlap between the paired-end reads over the target ITS region](Scenario_1.png)
-
-The Schematic 1 here depicts a scenario where the forward and reverse reads overlap and allows for capturing the entire ITS region.
+![Schematic 1: Short overlap between the paired-end reads over the target ITS region](overlap.png) ![Schematic 2: The single read here is larger than the target ITS region](read_past_primer.png)
 
 
-![Schematic 2: The single read here is larger than the target ITS region](Scenario_2.png)
-
-
-The Schematic 2 here depicts a scenario where the forward and reverse read into the second primer and the reverse complement is present at the end of the read.
+Schematic 1 here depicts a scenario where the forward and reverse reads overlap and allows for capturing the entire ITS region and schematic 2 here depicts a scenario where the forward and reverse read into the second primer and the reverse complement is present at the end of the read.
 
 ## Starting point
 
@@ -41,9 +35,9 @@ You can also refer to the [FAQ](https://benjjneb.github.io/dada2/faq.html) for r
 
 ##Getting ready
 
-Along with the `DADA2` library, we also load the `ShortRead` and the `Biostrings` package (R Bioconductor packages; can be installed from the following locations, [dada2](https://benjjneb.github.io/dada2/dada-installation.html), [ShortRead](https://bioconductor.org/packages/release/bioc/html/ShortRead.html) and [Biostrings](https://bioconductor.org/packages/release/bioc/html/Biostrings.html)) which will be help in identification and count of the primers present on the raw FASTQ sequence files.  
+Along with the `dada2` library, we also load the `ShortRead` and the `Biostrings` package (R Bioconductor packages; can be installed from the following locations, [dada2](https://benjjneb.github.io/dada2/dada-installation.html), [ShortRead](https://bioconductor.org/packages/release/bioc/html/ShortRead.html) and [Biostrings](https://bioconductor.org/packages/release/bioc/html/Biostrings.html)) which will be help in identification and count of the primers present on the raw FASTQ sequence files.  
 
-```{r dada2 Library, warning=FALSE, message=FALSE, tidy=TRUE}
+```{r dada2 Library, warning=FALSE, message=FALSE, tidy=TRUE, results='hold'}
 library(dada2);
 packageVersion("dada2")
 library(ShortRead);
@@ -64,37 +58,30 @@ The below functions labeled, prmr_funcn takes the primer sequence as an input an
 ```{r Primer function, warning=FALSE, message=FALSE, tidy=TRUE}
 prmr_funcn <- function(prmr){
 prmr_dna <- DNAString(prmr)
-prmr_dna_comp <- complement(prmr_dna)
-prmr_dna_rev <- reverse(prmr_dna)
-prmr_dna_revcomp <- reverseComplement(prmr_dna)
-prmr_dna_comp <- toString(prmr_dna_comp)
-prmr_dna_rev <- toString(prmr_dna_rev)
-prmr_dna_revcomp <- toString(prmr_dna_revcomp)
-return(c(prmr,prmr_dna_comp,prmr_dna_rev,prmr_dna_revcomp))}
+cmplmnt <- toString(complement(prmr_dna))
+rvrse <- toString(reverse(prmr_dna))
+rvrse_cmplmnt <- toString(reverseComplement(prmr_dna))
+return(c(prmr,cmplmnt,rvrse,rvrse_cmplmnt))}
 
 
 vcnt_funcn <- function(prmr,filt_seq)
-  {vcount_pattern<-vcountPattern(prmr,DNAStringSet(filt_seq),fixed = FALSE)
+  {vcount_pattern <- vcountPattern(prmr,DNAStringSet(filt_seq),fixed = FALSE)
   return(sum(vcount_pattern))}
 ```
 
 
 ##Trimming primers on the untrimmed FASTQ reads
 
-The dataset used here is a Mock ITS community constructed by selecting a 23 known fungal cultures from the Center for Forest Mycology Research (CFMR) culture collection and sequenced on an Illumina MiSeq using a 2 X 300 bp sequencing kit. The primers used for this construction are as listed below:
+The dataset used here is a Mock ITS community constructed by selecting a 23 known fungal cultures from the Center for Forest Mycology Research (CFMR) culture collection and sequenced on an Illumina MiSeq using a 2 X 300 bp sequencing kit. The primers used for this construction are as listed below, we create the complement, reverse and reverse complement forms of the primer ITS1f and ITS4 using the forward orientation of the primer as the input to the prmr_funcn. 
 
-```{r ITS primers, warning=FALSE, message=FALSE, tidy=TRUE}
-ITS1f <- "GTGARTCATCGAATCTTTG"
+
+```{r ITS primers, warning=FALSE, message=FALSE, tidy=TRUE, comment="NA"}
+ITS1f <- "GTGARTCATCGAATCTTTG" ## Define your primer sequence here
 ITS4 <- "TCCTCCGCTTATTGATATGC"
-```
-
-
-At this step, we create the complement, reverse and reverse complement forms of the primer ITS1f and ITS4 using the forward orientation of the primer as the input to the prmr_funcn. 
-
-```{r Primer form, warning=FALSE, message=FALSE, tidy=TRUE}
 ITS1f.form <- prmr_funcn(ITS1f)
-ITS1f.form ##The output is ordered in the forward, complement, reverse and reverse complement orientations of the ITS1f primer.
 ITS4.form <- prmr_funcn(ITS4)
+primer.form <- c(ITS1f.form, ITS4.form)
+ITS4.form ##The output is ordered in the forward, complement, reverse and reverse complement orientations of the ITS4 primer.
 ```
 
 The presence of ambiguous bases in the construction of primers makes accurate counting of the primers with the presence of Ns in raw FASTQ files difficult. We first remove the Ns using the filterAndTrim function in DADA2. 
@@ -102,7 +89,7 @@ The presence of ambiguous bases in the construction of primers makes accurate co
 To follow along, download the example data and unzip. These are paired-end fastq files which are to be processed. Define the following path variable so that it points to the extracted directory on **your** machine:
 
 ```{r N removal, warning=FALSE, message=FALSE, tidy=TRUE}
-path <- "~/Desktop/ITS_mock_community" # CHANGE ME to the directory containing the fastq files.
+path <- "~/Desktop/ITS_mock_community" ## CHANGE ME to the directory containing the fastq files.
 list.files(path)
 ```
 
@@ -117,7 +104,6 @@ mock.names <- sapply(strsplit(basename(Mock.fnFs),"_"),'[',1)
 mock.names ## Lists the names of all the sequence files
 Mock.fnFs.filtN <- file.path(path, "filtN", paste0(mock.names, "_R1_filtN.fastq.gz"))
 Mock.fnRs.filtN <- file.path(path, "filtN", paste0(mock.names, "_R2_filtN.fastq.gz"))
-
 filterAndTrim(Mock.fnFs, Mock.fnFs.filtN, Mock.fnRs, Mock.fnRs.filtN, maxN = 0, multithread = TRUE)
 ```
 
@@ -127,19 +113,18 @@ After the removal of Ns from the raw reads, we can now count the primers present
 Here we read in the Ns removed FASTQ file using the `readFastq` function from the ShortRead package and then store it as a character vector. 
 
 ```{r Sequence read in, warning=FALSE, message=FALSE, tidy=TRUE}
-Mock.R1.filtN <- readFastq("~/Desktop/ITS_mock_community/filtN/m4C-mock3-16000_R1_filtN.fastq.gz")
-Mock.R1.filtN.seq <- as.character(sread(Mock.R1.filtN))
-Mock.R2.filtN <- readFastq("~/Desktop/ITS_mock_community/filtN/m4C-mock3-16000_R2_filtN.fastq.gz")
-Mock.R2.filtN.seq <- as.character(sread(Mock.R2.filtN))
+Mock.R1.filtN <- as.character(sread(readFastq(Mock.fnFs[1])))
+Mock.R2.filtN <- as.character(sread(readFastq(Mock.fnRs[1])))
 ```
 
 The outputs from applying the `vnct_funcn` show the presence of the primers on the FASTQ files. 
 
-```{r Primer check, warning=FALSE, message=FALSE, tidy=TRUE}
-sapply(ITS1f.form, vcnt_funcn, filt_seq = Mock.R1.filtN.seq)
-sapply(ITS4.form, vcnt_funcn, filt_seq = Mock.R1.filtN.seq)
-sapply(ITS1f.form, vcnt_funcn, filt_seq = Mock.R2.filtN.seq)
-sapply(ITS4.form, vcnt_funcn, filt_seq = Mock.R2.filtN.seq)
+```{r Primer check, warning=FALSE, message=FALSE, tidy=TRUE, results='hold'}
+# Checking and counting the presence of the primer set in the forward read
+sapply(primer.form, vcnt_funcn, filt_seq = Mock.R1.filtN)
+# Checking and counting the presence of the primer set in the reverse read
+sapply(primer.form, vcnt_funcn, filt_seq = Mock.R2.filtN)
+
 ```
 
 The forward orientation of the ITS1f and the reverse complement orientation of the ITS4 primer are present on the forward FASTQ file, the forward orientation of the ITS4 and the reverse complement orientation of the ITS1f primer are present on the reverse FASTQ file.
@@ -154,49 +139,45 @@ First we define the paths, parameters and arguments to be assigned to cutadapt f
 The `system2` function is used to run cutadapt within R.
 
 ```{r system command, warning=FALSE, message=FALSE, tidy=TRUE}
-path.mock <- "~/Desktop/ITS_mock_community"
-Mock.fnFs.cutadapt <- file.path(path,paste0(mock.names,"_R1_trimmed.fastq.gz"))
-Mock.fnRs.cutadapt <- file.path(path,paste0(mock.names,"_R2_trimmed.fastq.gz"))
+dir.create(file.path(path,"cutadapt_trimmed"))
+path.cutadapt <- "~/Desktop/ITS_mock_community/cutadapt_trimmed"
+Mock.fnFs.cutadapt <- file.path(path.cutadapt, paste0(mock.names,"_R1_trimmed.fastq.gz"))
+Mock.fnRs.cutadapt <- file.path(path.cutadapt, paste0(mock.names,"_R2_trimmed.fastq.gz"))
 trim.cmd <- "-n 2 -m 50"
 primers<-c("-g GTGARTCATCGAATCTTTG", "-a GCATATCAATAAGCGGAGGA","-G TCCTCCGCTTATTGATATGC", "-A CAAAGATTCGATGAYTCAC")
 cutadapt.path<-"/Users/nbetrap/miniconda2/bin/cutadapt" ##Change to the cutadapt installed path
-system2(cutadapt.path, args=c(primers, trim.cmd, "-o", Mock.fnFs.cutadapt[1], "-p", Mock.fnRs.cutadapt[1], Mock.fnFs.filtN[1], Mock.fnRs.filtN[1]))
-system2(cutadapt.path, args=c(primers, trim.cmd, "-o", Mock.fnFs.cutadapt[2], "-p", Mock.fnRs.cutadapt[2], Mock.fnFs.filtN[2], Mock.fnRs.filtN[2]))
+
+for(i in 1:length(mock.names)) {
+  system2(cutadapt.path, args = c(primers, trim.cmd, "-o", Mock.fnFs.cutadapt[i],"-p", Mock.fnRs.cutadapt[i], Mock.fnFs.filtN[i], Mock.fnRs.filtN[i]))
+}
 ```
 
 As a sanity check, we read in the cutadapt trimmed file to confirm the removal of primers on the sequence files. 
 
 ```{r Trimmed read in, warning=FALSE, message=FALSE, tidy=TRUE}
-Mock.R1.trimmed <- readFastq("~/Desktop/ITS_mock_community/m4C-mock3-16000_R1_trimmed.fastq.gz")
-Mock.R1.trimmed.seq <- as.character(sread(Mock.R1.trimmed))
-Mock.R2.trimmed <- readFastq("~/Desktop/ITS_mock_community/m4C-mock3-16000_R2_trimmed.fastq.gz")
-Mock.R2.trimmed.seq <- as.character(sread(Mock.R2.trimmed))
+Mock.R1.trimmed <- as.character(sread(readFastq(Mock.fnFs.cutadapt[1])))
+Mock.R2.trimmed <- as.character(sread(readFastq(Mock.fnRs.cutadapt[2])))
 ```
 
 Similar to the step earlier, the `vcnt_funcn` is used to confirm the presence of the primers. 
 
-```{r Primer check trimmed, warning=FALSE, message=FALSE, tidy=TRUE}
-sapply(ITS1f.form, vcnt_funcn, filt_seq=Mock.R1.trimmed.seq)
-sapply(ITS4.form, vcnt_funcn, filt_seq=Mock.R1.trimmed.seq)
-sapply(ITS1f.form, vcnt_funcn, filt_seq=Mock.R2.trimmed.seq)
-sapply(ITS4.form, vcnt_funcn, filt_seq=Mock.R2.trimmed.seq)
+```{r Primer check trimmed, warning=FALSE, message=FALSE, tidy=TRUE, results='hold'}
+# Checking and counting the presence of the primer set in the forward read
+sapply(primer.form, vcnt_funcn, filt_seq=Mock.R1.trimmed)
+# Checking and counting the presence of the primer set in the reverse read
+sapply(primer.form, vcnt_funcn, filt_seq=Mock.R2.trimmed)
 ```
 
 The output confirms that cutadapt has trimmed all the primers on the sequence files. 
 
 The primer trimmed sequence files are now ready to be analyzed through the DADA2 pipeline.
 
-```{r Path setting, warning=FALSE, message=FALSE, tidy=TRUE}
-path <- "~/Desktop/ITS_mock_community"
-list.files(path)
-```
-
 Similar to the earlier steps of reading in FASTQ files, we read in the names of the FASTQ files and applying some string manipulation to get the matched lists of forward and reverse fastq files.
 
 ```{r Import files, warning=FALSE, message=FALSE, tidy=TRUE}
 #Forward and reverse fastq filenames have the format: 
-fnFs <- sort(list.files(path, pattern = "R1_trimmed.fastq", full.names = TRUE))
-fnRs <- sort(list.files(path, pattern = "R2_trimmed.fastq", full.names = TRUE))
+fnFs <- sort(list.files(path.cutadapt, pattern = "R1_trimmed.fastq", full.names = TRUE))
+fnRs <- sort(list.files(path.cutadapt, pattern = "R2_trimmed.fastq", full.names = TRUE))
 
 # Extract sample names, assuming filenames have format: 
 
@@ -229,15 +210,14 @@ The reverse reads are comparitively poorer quality, especially at the end, which
 Assigning the filenames for the output of the filtered reads to be stored as fastq.gz files. 
 
 ```{r filt_output, warning=FALSE, message=FALSE, tidy=TRUE}
-filtFs <- file.path(path, "filtered", paste0(sample.names, "_F_filt.fastq.gz"))
-filtRs <- file.path(path, "filtered", paste0(sample.names, "_R_filt.fastq.gz"))
+filtFs <- file.path(path.cutadapt, "filtered", paste0(sample.names, "_F_filt.fastq.gz"))
+filtRs <- file.path(path.cutadapt, "filtered", paste0(sample.names, "_R_filt.fastq.gz"))
 ```
 
 Based on the user input and using default parameters, DADA2's function, filterAndTrim is one of the key steps to obtain high-resolution ITS amplicon sequences. For this dataset, we will use standard filtering paraments: `maxN=0` (DADA2 requires sequences contain no Ns), `truncQ = 2`, `rm.phix = TRUE` and `maxEE=2`. The `maxEE` parameter sets the maximum number of "expected errors" allowed in a read, which is a [better filter than simply averaging quality scores](http://www.drive5.com/usearch/manual/expected_errors.html).
 
 ```{r Filter and Trim, warning=FALSE, message=FALSE, tidy=TRUE}
 out<-filterAndTrim(fnFs, filtFs,fnRs, filtRs,maxN = 0, maxEE = c(2,2), truncQ =2, rm.phix = TRUE, compress = TRUE, multithread = TRUE) # on windows, set multithread = FALSE
-
 (out)
 ```
 
