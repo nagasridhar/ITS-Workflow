@@ -1,0 +1,282 @@
+---
+title: "Intuition for appropriate filtering parameters"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+This workflow discusses the steps to follow for choosing appropriate filtering parameters for **DADA2**. 
+
+We discuss the steps to visualize paired end amplicon sequences and to choose the trimming parameters to retain enough overlap between the forward and the reverse read after truncation. The reads after truncation should be large enough to maintain 20 + biological.length.variation nucleotides of overlap between them as discussed in the [tutorial](https://benjjneb.github.io/dada2/tutorial.html).
+
+## Getting ready
+
+First we load the `dada2` package. If you don't already have it, see the [dada2 installation instructions](https://benjjneb.github.io/dada2/dada-installation.html).
+
+```{r dada2 Library, warning=FALSE, message=FALSE, tidy=TRUE, results='hold',comment= ""}
+library(dada2);
+packageVersion("dada2")
+```
+
+The dataset used here is a 16S V3 - V4 region with forward and reverse primers present on the sequences obtained from the ENA, with the study ID PRJEB6592 as [here](https://www.ebi.ac.uk/ena/data/view/PRJEB6592) from the paper, [Evaluating Bias of Illumina based Bacterial 16S rRNA Gene Profiles](http://aem.asm.org/content/80/18/5717.long). The dataset was constructed using an Illumina library construction, 2 x 250bp on an Illumina MiSeq. The primers used, Forward Primer : `CCTACGGGAGGCAGCAG` of length 17 bp and Reverse Primer : `GGACTACHVGGGTWTCTAAT` of length 20 bp. 
+
+
+```{r path, warning=FALSE, message=FALSE, tidy=TRUE, results='hold',comment= ""}
+path <- "~/Desktop/Example_files"
+list.files(path)
+```
+
+
+Now we read in the names of the fastq files, and perform string manipulation to get matched lists of the forward and reverse fastq files. 
+
+
+```{r reads, warning=FALSE, message=FALSE, tidy=TRUE, results='hold',comment= ""}
+# Forward and reverse fastq filenames have format: SAMPLENAME_R1_001.fastq and SAMPLENAME_R2_001.fastq
+fnFs <- sort(list.files(path, pattern="_1.fastq.gz", full.names = TRUE))
+fnRs <- sort(list.files(path, pattern="_2.fastq.gz", full.names = TRUE))
+# Extract sample names, assuming filenames have format: SAMPLENAME_XXX.fastq
+sample.names <- sapply(strsplit(basename(fnFs), "_"), `[`, 1)
+sample.names
+```
+
+## Inspect read quality profiles
+
+```{r quality profile, warning=FALSE, message=FALSE, tidy=TRUE, results='hold',comment= ""}
+plotQualityProfile(c(fnFs[1], fnRs[1]))
+```
+
+
+The forward and reverse reads are of good quality here. We generally advise trimming the last few nucleotides to avoid less well-controlled errors that can arise there. These quality profiles do not suggest that any additional trimming is needed. 
+
+For the purpose of this workflow, we explore three scenarios of different parameters at the filterAndTrim step. 
+
++ **Ensure primers are removed, maintaining 20 + biological.length.variation nucleotides of overlap between forward and reverse reads.**
++ **Maintaining 20 + biological.length.variation nucleotides of overlap between forward and reverse reads.**
++ **Following stringent trimming of poor quality bases.**
+
+
+## Scenario 1
+
++ **Ensure primers are removed, maintaining 20 + biological.length.variation nucleotides of overlap between forward and reverse reads.**
+
+We use the Quality profile as a guide and will truncate the forward and reverse reads at position 240 (trimming the last 10 nucleotides), i.e., `truncLen=c(240,240)` to avoid less well-controlled errors and trim the primers from the reads using `trimLeft=c(17,20)`. In theory, if you understand your amplicon sequencing setup, this is sufficient to continue. However, to ensure you are trimming the primers in the correct orientation or if you are unsure of the primer orientation, you can follow the steps as outlined at the [ITS tutorial](https://benjjneb.github.io/dada2/ITS_workflow.html) for steps to identify and trimming primers.
+
+After choosing the trimming parameters, we apply the `dada2` workflow steps and track the number of retained reads. The steps discussed here are presented in abbreviated format. A detailed explanation of the `dada2` workflow can be found [here](https://benjjneb.github.io/dada2/tutorial.html).
+
+## Filter and trim, Learn the error rates, dereplicate, sample inference and merging reads.
+
+Assigning the filenames for the filtered fastq.gz files. 
+
+```{r filt path, warning=FALSE, message=FALSE, tidy=TRUE, results='hold',comment= ""}
+filtFs <- file.path(path, "filtered", paste0(sample.names, "_F_filt.fastq.gz"))
+filtRs <- file.path(path, "filtered", paste0(sample.names, "_R_filt.fastq.gz"))
+```
+
+We will use standard filtering parameters: `maxN=0` (DADA2 requires no Ns), truncQ=2, rm.phix=TRUE and maxEE=2 along with truncLen=c(240, 240), trimLeft = c(17,20) for maintaining biological length variation and removing the primers on the forward and reverse reads respectively.
+
+```{r filter and trim, warning=FALSE, message=FALSE, tidy=TRUE, results='hide',comment= ""}
+out <- filterAndTrim(fnFs, filtFs, fnRs, filtRs, truncLen=c(245, 245), trimLeft = c(17,20), maxN=0, maxEE=c(2,2), truncQ=2, rm.phix=TRUE, compress=TRUE, multithread=TRUE) # On Windows set multithread=FALSE
+errF <- learnErrors(filtFs, multithread=TRUE)
+errR <- learnErrors(filtRs, multithread=TRUE)
+derepFs <- derepFastq(filtFs, verbose=TRUE)
+derepRs <- derepFastq(filtRs, verbose=TRUE)
+dadaFs <- dada(derepFs, err=errF, multithread=TRUE)
+dadaRs <- dada(derepRs, err=errR, multithread=TRUE)
+mergers <- mergePairs(dadaFs, derepFs, dadaRs, derepRs, verbose=TRUE)
+```
+
+## Construct sequence table and remove chimeras
+
+```{r seqtab, warning=FALSE, message=FALSE, tidy=TRUE, results='hide',comment= ""}
+seqtab <- makeSequenceTable(mergers)
+seqtab.nochim <- removeBimeraDenovo(seqtab, method="consensus", multithread=TRUE, verbose=TRUE)
+```
+
+## Track reads through the pipeline
+
+```{r track reads, warning=FALSE, message=FALSE, tidy=TRUE, comment= ""}
+getN <- function(x) sum(getUniques(x))
+track <- cbind(out, getN(dadaFs), getN(dadaRs), getN(mergers), rowSums(seqtab.nochim))
+colnames(track) <- c("input", "filtered", "denoisedF", "denoisedR", "merged", "nonchim")
+rownames(track) <- sample.names
+head(track)
+```
+
+The table above shows that we kept majority of our raw reads and there is no large loss of reads with any single step. The chosen parameters for trimming seem to work well for the current dataset. 
+
+## Scenario 2
+
++ **Maintain 20 + biological.length.variation nucleotides of overlap between forward and reverse reads.**
+
+In this scenario, we test if truncating the forward and reverse reads to maintain biological length variation of nucleotides overlap truncLen=c(240,240)` is enough to choose towards consideration at the trim step.
+
+## Filter and trim, Learn the error rates, dereplicate, sample inference and merging reads.
+
+Assigning the filenames for the filtered fastq.gz files. 
+
+```{r filt path no primer, warning=FALSE, message=FALSE, tidy=TRUE, results='hold',comment= ""}
+filtFs <- file.path(path, "filtered", paste0(sample.names, "_F_filt.fastq.gz"))
+filtRs <- file.path(path, "filtered", paste0(sample.names, "_R_filt.fastq.gz"))
+```
+
+We will use standard filtering parameters: `maxN=0` (DADA2 requires no Ns), truncQ=2, rm.phix=TRUE and maxEE=2 along with truncLen=c(240, 240) for maintaining biological length variation.
+
+```{r filter and trim no primer, warning=FALSE, message=FALSE, tidy=TRUE, results='hide',comment= ""}
+out <- filterAndTrim(fnFs, filtFs, fnRs, filtRs, truncLen=c(240, 240), maxN=0, maxEE=c(2,2), truncQ=2, rm.phix=TRUE, compress=TRUE, multithread=TRUE) # On Windows set multithread=FALSE
+errF <- learnErrors(filtFs, multithread=TRUE)
+errR <- learnErrors(filtRs, multithread=TRUE)
+derepFs <- derepFastq(filtFs, verbose=TRUE)
+derepRs <- derepFastq(filtRs, verbose=TRUE)
+dadaFs <- dada(derepFs, err=errF, multithread=TRUE)
+dadaRs <- dada(derepRs, err=errR, multithread=TRUE)
+mergers <- mergePairs(dadaFs, derepFs, dadaRs, derepRs, verbose=TRUE)
+```
+
+## Construct sequence table and remove chimeras
+
+```{r seqtab no primer, warning=FALSE, message=FALSE, tidy=TRUE, results='hide',comment= ""}
+seqtab <- makeSequenceTable(mergers)
+seqtab.nochim <- removeBimeraDenovo(seqtab, method="consensus", multithread=TRUE, verbose=TRUE)
+```
+
+## Track reads through the pipeline
+
+```{r track reads no primer, warning=FALSE, message=FALSE, tidy=TRUE, comment= ""}
+getN <- function(x) sum(getUniques(x))
+track <- cbind(out, getN(dadaFs), getN(dadaRs), getN(mergers), rowSums(seqtab.nochim))
+colnames(track) <- c("input", "filtered", "denoisedF", "denoisedR", "merged", "nonchim")
+rownames(track) <- sample.names
+head(track)
+```
+
+The table above shows that there was a majority loss of reads at the `removeBimeraDenovo` step. The presence of primers on the reads contributed to the loss of these reads and hence ensuring primers are removed from the reads is important towards retaining majority of reads for amplicon reads analysis through `dada2`. 
+
+
+## Scenario 3
+
++ **Stringent trimming of reads**
+
+In this scenario, we test following strict truncation based on the Quality profile of the reads. From the Quality profile we obtained above, we observe the quality tapers towards the end of the read. We trim about 30 towards the end of the reads using `truncLen=c(220,220)`.
+
+## Filter and trim, Learn the error rates, dereplicate, sample inference and merging reads.
+
+Assigning the filenames for the filtered fastq.gz files. 
+
+```{r filt path trimming, warning=FALSE, message=FALSE, tidy=TRUE, results='hold',comment= ""}
+filtFs <- file.path(path, "filtered", paste0(sample.names, "_F_filt.fastq.gz"))
+filtRs <- file.path(path, "filtered", paste0(sample.names, "_R_filt.fastq.gz"))
+```
+
+
+We will use standard filtering parameters: `maxN=0` (DADA2 requires no Ns), truncQ=2, trimLeft = c(17,20), rm.phix=TRUE and maxEE=2 along with truncLen=c(220, 220).
+
+```{r filter and trim trimming, warning=FALSE, message=FALSE, tidy=TRUE, results='hide',comment= ""}
+out <- filterAndTrim(fnFs, filtFs, fnRs, filtRs, truncLen=c(220, 220), trimLeft = c(17,20), maxN=0, maxEE=c(2,2), truncQ=2, rm.phix=TRUE, compress=TRUE, multithread=TRUE) # On Windows set multithread=FALSE
+errF <- learnErrors(filtFs, multithread=TRUE)
+errR <- learnErrors(filtRs, multithread=TRUE)
+derepFs <- derepFastq(filtFs, verbose=TRUE)
+derepRs <- derepFastq(filtRs, verbose=TRUE)
+dadaFs <- dada(derepFs, err=errF, multithread=TRUE)
+dadaRs <- dada(derepRs, err=errR, multithread=TRUE)
+mergers <- mergePairs(dadaFs, derepFs, dadaRs, derepRs, verbose=TRUE)
+```
+
+## Construct sequence table and remove chimeras
+
+```{r seqtab trimming, warning=FALSE, message=FALSE, tidy=TRUE, results='hide',comment= ""}
+#seqtab <- makeSequenceTable(mergers)
+#seqtab.nochim <- removeBimeraDenovo(seqtab, method="consensus", multithread=TRUE, verbose=TRUE)
+```
+
+## Track reads through the pipeline
+
+```{r track reads trimming, warning=FALSE, message=FALSE, tidy=TRUE, comment= ""}
+getN <- function(x) sum(getUniques(x))
+track <- cbind(out, getN(dadaFs), getN(dadaRs), getN(mergers))
+colnames(track) <- c("input", "filtered", "denoisedF", "denoisedR", "merged")
+rownames(track) <- sample.names
+head(track)
+```
+
+The table above shows that none of the forward and reverse reads were able to merge due to choosing stringent trimming of the forward and reverse reads. All the reads were lost as we failed to maintain 20 + biological.length.variation nucleotides. 
+
+
+After considering the above 3 scenarios, ensuring to remove primers and maintaining 20 + biological.length.variation seems to be the the appropriate trimming parameters of choice for analyzing amplicon sequence data using `dada2`. 
+
+
+## Considerations for poor quality profile data
+
+Here, we discuss the steps to follow for a relatively poor sequence quality dataset. 
+
+The dataset used here is a hypervariable V3-V4 16S rRNA region of the bacterial gene was targeted by universal bacterial primer 319F and 806R. The library was sequenced on the Illumina MiSeq using a paired-end 300-bp protocol and v3 reagents with forward and reverse primers present on the sequences obtained from the ENA, with the study ID PRJNA473351. The primers used, Forward Primer : `ACTCCTACGGGAGGCAGCAG` of length 20 bp and Reverse Primer : `GGACTACHVGGGTWTCTAAT` of length 20 bp. 
+
+
+## Obtaining sequence data
+
+```{r poor sequence data, warning=FALSE, message=FALSE, tidy=TRUE, results='hold',comment= ""}
+path <- "~/Desktop/poor_quality"
+list.files(path)
+```
+
+Now we read in the names of the fastq files, and perform string manipulation to get matched lists of the forward and reverse fastq files.
+
+```{r poor sequence data reads, warning=FALSE, message=FALSE, tidy=TRUE, results='hold',comment= ""}
+# Forward and reverse fastq filenames have format: SAMPLENAME_R1_001.fastq and SAMPLENAME_R2_001.fastq
+fnFs <- sort(list.files(path, pattern="_1.fastq.gz", full.names = TRUE))
+fnRs <- sort(list.files(path, pattern="_2.fastq.gz", full.names = TRUE))
+# Extract sample names, assuming filenames have format: SAMPLENAME_XXX.fastq
+sample.names <- sapply(strsplit(basename(fnFs), "_"), `[`, 1)
+sample.names
+```
+
+## Inspect read quality profiles
+
+```{r quality profile poor data, warning=FALSE, message=FALSE, tidy=TRUE, results='hold',comment= ""}
+plotQualityProfile(c(fnFs[1], fnRs[1]))
+```
+
+
+From the obtained Quality profile, we see that the reads are of considerable poor quality especially towards the end and it seems to be worse for the reverse read. We truncate the last 30 nucleotides on the forward read and 60 nucleotides to remove poor quality sequence data. We cannot truncate beyond this as we would need to retain enough bases to maintain 20 + biological.length.variation nucleotides of overlap between the forward and reverse reads.
+
+## Filter and trim, Learn the error rates, dereplicate, sample inference and merging reads.
+
+Assigning the filenames for the filtered fastq.gz files. 
+
+```{r filt path poor data, warning=FALSE, message=FALSE, tidy=TRUE, results='hold',comment= ""}
+filtFs <- file.path(path, "filtered", paste0(sample.names, "_F_filt.fastq.gz"))
+filtRs <- file.path(path, "filtered", paste0(sample.names, "_R_filt.fastq.gz"))
+```
+
+We will use standard filtering parameters: `maxN=0` (DADA2 requires no Ns), truncQ=2, rm.phix=TRUE and maxEE=2 along with truncLen=c(240, 240), trimLeft = c(20,20). 
+
+```{r out 250, warning=FALSE, message=FALSE,tidy=TRUE, results='hide',comment= ""}
+out <- filterAndTrim(fnFs, filtFs, fnRs, filtRs, truncLen=c(270,240), maxN=0, maxEE=c(2,2), trimLeft = c(20,20), truncQ=2, rm.phix=TRUE, compress=TRUE, multithread=TRUE) # On Windows set multithread=FALSE
+errF <- learnErrors(filtFs, multithread=TRUE)
+errR <- learnErrors(filtRs, multithread=TRUE)
+derepFs <- derepFastq(filtFs, verbose=TRUE)
+derepRs <- derepFastq(filtRs, verbose=TRUE)
+dadaFs <- dada(derepFs, err=errF, multithread=TRUE)
+dadaRs <- dada(derepRs, err=errR, multithread=TRUE)
+mergers <- mergePairs(dadaFs, derepFs, dadaRs, derepRs, verbose=TRUE)
+```
+
+## Construct sequence table and remove chimeras
+
+```{r seqtab poor data, warning=FALSE, message=FALSE, tidy=TRUE, results='hide',comment= ""}
+seqtab <- makeSequenceTable(mergers)
+seqtab.nochim <- removeBimeraDenovo(seqtab, method="consensus", multithread=TRUE, verbose=TRUE)
+```
+
+## Track reads through the pipeline
+
+```{r track reads poor data, warning=FALSE, message=FALSE, tidy=TRUE, comment= ""}
+getN <- function(x) sum(getUniques(x))
+track <- cbind(out, getN(dadaFs), getN(dadaRs), getN(mergers), rowSums(seqtab.nochim))
+colnames(track) <- c("input", "filtered", "denoisedF", "denoisedR", "merged", "nonchim")
+rownames(track) <- sample.names
+head(track)
+```
+
+The table above shows that the biggest loss of sequences was at the initial filtering step which is common for a poor quality sequence data. We later retain majority of our raw reads and there is no large loss of reads with any single step. 
