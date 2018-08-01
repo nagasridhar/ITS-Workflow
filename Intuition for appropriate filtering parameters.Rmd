@@ -7,9 +7,9 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-This workflow discusses the steps to follow for choosing appropriate filtering parameters for **DADA2**. 
+This workflow discusses the steps to follow for choosing appropriate filtering parameters for analyzing amplicon sequence reads using **DADA2**. 
 
-We discuss the steps to visualize paired end amplicon sequences and to choose the trimming parameters to retain enough overlap between the forward and the reverse read after truncation. The reads after truncation should be large enough to maintain 20 + biological.length.variation nucleotides of overlap between them as discussed in the [tutorial](https://benjjneb.github.io/dada2/tutorial.html).
+We discuss the steps to visualize paired end amplicon sequences and then choose the trimming parameters to retain enough overlap between the forward and the reverse read after truncation. The reads after truncation should be large enough to maintain 20 + biological.length.variation nucleotides of overlap between them as discussed in the [tutorial](https://benjjneb.github.io/dada2/tutorial.html).
 
 ## Getting ready
 
@@ -28,6 +28,14 @@ path <- "~/Desktop/Example_files"
 list.files(path)
 ```
 
+Identifying the lengths of the primers used in this library.
+
+```{r primers, warning=FALSE, message=FALSE, tidy=TRUE, results='hold',comment= ""}
+Forward.primer <- "CCTACGGGAGGCAGCAG"
+nchar(Forward.primer)
+Reverse.primer <- "GGACTACHVGGGTWTCTAAT"
+nchar(Reverse.primer)
+```
 
 Now we read in the names of the fastq files, and perform string manipulation to get matched lists of the forward and reverse fastq files. 
 
@@ -42,6 +50,8 @@ sample.names
 ```
 
 ## Inspect read quality profiles
+
+Here we plot the quality profile of the forward and reverse reads. 
 
 ```{r quality profile, warning=FALSE, message=FALSE, tidy=TRUE, results='hold',comment= ""}
 plotQualityProfile(c(fnFs[1], fnRs[1]))
@@ -59,9 +69,9 @@ For the purpose of this workflow, we explore three scenarios of different parame
 
 ## Scenario 1
 
-+ **Ensure primers are removed, maintaining 20 + biological.length.variation nucleotides of overlap between forward and reverse reads.**
+**Ensure primers are removed, maintaining 20 + biological.length.variation nucleotides of overlap between forward and reverse reads.**
 
-We use the Quality profile as a guide and will truncate the forward and reverse reads at position 240 (trimming the last 10 nucleotides), i.e., `truncLen=c(240,240)` to avoid less well-controlled errors and trim the primers from the reads using `trimLeft=c(17,20)`. In theory, if you understand your amplicon sequencing setup, this is sufficient to continue. However, to ensure you are trimming the primers in the correct orientation or if you are unsure of the primer orientation, you can follow the steps as outlined at the [ITS tutorial](https://benjjneb.github.io/dada2/ITS_workflow.html) for steps to identify and trimming primers.
+We use the quality profile as a guide and will truncate the forward and reverse reads at position 240 (trimming the last 10 nucleotides), by choosing `truncLen=c(240,240)` to avoid less well-controlled errors and also trim the primers used in this sequencing run from the reads by choosing `trimLeft=c(17,20)`. In theory, if you understand your amplicon sequencing setup, this is sufficient to continue. However, to ensure you are trimming the primers in the correct orientation or if you are unsure of the primer orientation, you can follow the steps as outlined at the [ITS tutorial](https://benjjneb.github.io/dada2/ITS_workflow.html) for steps to identify and trimming primers.
 
 After choosing the trimming parameters, we apply the `dada2` workflow steps and track the number of retained reads. The steps discussed here are presented in abbreviated format. A detailed explanation of the `dada2` workflow can be found [here](https://benjjneb.github.io/dada2/tutorial.html).
 
@@ -108,9 +118,9 @@ The table above shows that we kept majority of our raw reads and there is no lar
 
 ## Scenario 2
 
-+ **Maintain 20 + biological.length.variation nucleotides of overlap between forward and reverse reads.**
+**Maintain 20 + biological.length.variation nucleotides of overlap between forward and reverse reads.**
 
-In this scenario, we test if truncating the forward and reverse reads to maintain biological length variation of nucleotides overlap truncLen=c(240,240)` is enough to choose towards consideration at the trim step.
+In this scenario, we test if only truncating the forward and reverse reads to maintain biological length variation of nucleotides overlap truncLen=c(240,240)` is enough for consideration at the trim step.
 
 ## Filter and trim, Learn the error rates, dereplicate, sample inference and merging reads.
 
@@ -151,12 +161,12 @@ rownames(track) <- sample.names
 head(track)
 ```
 
-The table above shows that there was a majority loss of reads at the `removeBimeraDenovo` step. The presence of primers on the reads contributed to the loss of these reads and hence ensuring primers are removed from the reads is important towards retaining majority of reads for amplicon reads analysis through `dada2`. 
+The table above shows that there was a majority loss of reads at the `removeBimeraDenovo` step. The presence of primers on the reads contributed to the loss of these reads as majority of th reads were identified as chimeric and hence ensuring primers are removed from the reads is important towards retaining majority of reads for amplicon reads analysis through `dada2`. 
 
 
 ## Scenario 3
 
-+ **Stringent trimming of reads**
+**Stringent trimming of reads**
 
 In this scenario, we test following strict truncation based on the Quality profile of the reads. From the Quality profile we obtained above, we observe the quality tapers towards the end of the read. We trim about 30 towards the end of the reads using `truncLen=c(220,220)`.
 
@@ -203,7 +213,7 @@ head(track)
 The table above shows that none of the forward and reverse reads were able to merge due to choosing stringent trimming of the forward and reverse reads. All the reads were lost as we failed to maintain 20 + biological.length.variation nucleotides. 
 
 
-After considering the above 3 scenarios, ensuring to remove primers and maintaining 20 + biological.length.variation seems to be the the appropriate trimming parameters of choice for analyzing amplicon sequence data using `dada2`. 
+After considering the above 3 scenarios, ensuring to remove primers and maintaining 20 + biological.length.variation seems to be the the appropriate trimming parameters of choice for analyzing amplicon sequence data using `dada2` as chosen in Scenario 1.
 
 
 ## Considerations for poor quality profile data
